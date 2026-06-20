@@ -152,6 +152,7 @@ entities:
 | Battery SoC Entity | `battery_soc`   | Sensor/entity id for the battery SoC. Only use under `battery` entity.     |
 | Show SoC            | `show_soc`              | If true, appends `| {soc}%` to the battery power label when a SoC source is configured. Default: false. |
 | Capacity          | `battery_capacity`              | Set the capacity of the battery in kWh, e.g. `9.5` |
+| Home Load Only     | `home_load_only`        | If true, prevents the battery discharge from showing up as feeding the grid, directing it exclusively to the home load. Default: false. |
 
 Example of a basic setup, note how battery is slightly different YAML as the card supports multiple batteries:
 

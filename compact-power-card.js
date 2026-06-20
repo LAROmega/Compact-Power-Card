@@ -298,6 +298,10 @@ class CompactPowerCard extends CompactPowerCardBase {
                         label: "Invert State Values?",
                         selector: { boolean: {} } 
                       },
+                      home_load_only: {
+                        label: "Home Load Only",
+                        selector: { boolean: {} }
+                      },
                       decimal_places: { 
                         label: "Decimal Places",
                         selector: { number: {} },
@@ -2823,10 +2827,15 @@ class CompactPowerCard extends CompactPowerCardBase {
     }
 
     // Battery discharge → remaining home, then export (only what PV export didn't cover)
-    const batteryToHome = Math.min(battDischarge, homeNeed);
-    homeNeed -= batteryToHome;
-    const battDischargeAfterHome = Math.max(battDischarge - batteryToHome, 0);
-    const batteryToGrid = Math.min(battDischargeAfterHome, Math.max(gridExport - pvToGrid, 0));
+    const homeLoadOnly = batteryList.some((b) => Boolean(b?.home_load_only));
+    const batteryToHome = homeLoadOnly ? battDischarge : Math.min(battDischarge, homeNeed);
+    if (homeLoadOnly) {
+      homeNeed = Math.max(0, homeNeed - battDischarge);
+    } else {
+      homeNeed -= batteryToHome;
+    }
+    const battDischargeAfterHome = homeLoadOnly ? 0 : Math.max(battDischarge - batteryToHome, 0);
+    const batteryToGrid = homeLoadOnly ? 0 : Math.min(battDischargeAfterHome, Math.max(gridExport - pvToGrid, 0));
 
     // Grid import → remaining home, then remaining battery charge
     const gridToHome = Math.min(gridImport, homeNeed);
