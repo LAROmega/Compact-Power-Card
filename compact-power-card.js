@@ -1232,18 +1232,16 @@ class CompactPowerCard extends CompactPowerCardBase {
   updated(changedProps) {
     if (super.updated) super.updated(changedProps);
     this._adjustLayout();
-    this._renderBatteryPvLines();
+    const batteryPvLinesChanged = this._renderBatteryPvLines();
     this._renderDeviceLines();
     this._logLayoutSizes();
     const layoutKey = `${this._hostWidth ?? 0}x${this._hostHeight ?? 0}x${this._externalHeight ?? 0}`;
-    if (layoutKey !== this._lastFlowLayoutKey) {
+    if (layoutKey !== this._lastFlowLayoutKey || batteryPvLinesChanged) {
       this._lastFlowLayoutKey = layoutKey;
       this._updateFlows();
     }
     if (this._pendingFlowUpdate && this.shadowRoot) {
       this._pendingFlowUpdate = false;
-      this._updateFlows();
-    } else if (this._batteryPvLines?.length) {
       this._updateFlows();
     }
   }
@@ -1526,14 +1524,24 @@ class CompactPowerCard extends CompactPowerCardBase {
 
   _renderBatteryPvLines() {
     const root = this.shadowRoot;
-    if (!root) return;
+    if (!root) return false;
     const group = root.getElementById("battery-pv-lines");
-    if (!group) return;
+    if (!group) return false;
+    const lines = Array.isArray(this._batteryPvLines) ? this._batteryPvLines : [];
+    const signature = JSON.stringify(
+      lines.map((ln) => ({
+        id: ln.id,
+        dotId: ln.dotId,
+        d: ln.d,
+        color: ln.color,
+      }))
+    );
+    if (group.dataset.signature === signature) return false;
     for (const name of Object.keys(this._flowAnimations || {})) {
       if (name.startsWith("battery-pv-")) this._stopFlow(name);
     }
     group.innerHTML = "";
-    const lines = Array.isArray(this._batteryPvLines) ? this._batteryPvLines : [];
+    group.dataset.signature = signature;
     const ns = "http://www.w3.org/2000/svg";
     lines.forEach((ln, index) => {
       const path = document.createElementNS(ns, "path");
@@ -1554,6 +1562,7 @@ class CompactPowerCard extends CompactPowerCardBase {
       dot.setAttribute("opacity", "0");
       group.appendChild(dot);
     });
+    return true;
   }
 
   connectedCallback() {
