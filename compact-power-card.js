@@ -669,18 +669,6 @@ class CompactPowerCard extends CompactPowerCardBase {
         transition: stroke 0.3s ease, stroke-opacity 0.3s ease;
       }
 
-      .cache-marker {
-        position: absolute;
-        right: 6px;
-        bottom: 4px;
-        color: #00e5ff;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0;
-        pointer-events: none;
-        z-index: 2;
-      }
-
       .device-line {
         fill: none;
         stroke-linecap: round;
@@ -4263,7 +4251,6 @@ class CompactPowerCard extends CompactPowerCardBase {
 
           </svg>
           <div class="overlay">
-            <div class="cache-marker">CPC mango 8138</div>
             <!-- Battery PV panels -->
             ${pvBatteries.map((item, index) => {
               const x = getPvPanelX(index, numPvBatteries);
