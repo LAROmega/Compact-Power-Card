@@ -153,9 +153,9 @@ entities:
 | Show SoC            | `show_soc`              | If true, appends `| {soc}%` to the battery power label when a SoC source is configured. Default: false. |
 | Capacity          | `battery_capacity`              | Set the capacity of the battery in kWh, e.g. `9.5` |
 | Home Load Only     | `home_load_only`        | If true, prevents the battery discharge from showing up as feeding the grid, directing it exclusively to the home load. Default: false. |
-| PV Input Entity     | `pv_entity`             | Sensor/entity id for PV power directly connected to this battery. Renders a dedicated PV panel icon at the top of the card inline with the main PV icon, connected via dotted background flow lines to this battery. |
+| PV Input Entity     | `pv_entity`             | Sensor/entity id for PV power directly connected to this battery. Renders a dedicated PV panel icon at the top of the card inline with the main PV icon, connected via flow lines to this battery. |
 | PV Unit             | `pv_unit`               | Select the unit of measurement to display the direct battery PV power value ("W", "kW", or "mW"). |
-| Force Hide PV when zero | `pv_force_hide_when_zero` | If true, completely hides this battery's dedicated PV panel icon and dotted line when the power reading is 0 W or negative. |
+| Force Hide PV when zero | `pv_force_hide_when_zero` | If true, completely hides this battery's dedicated PV panel icon and line when the power reading is 0 W or negative. |
 
 Example of a basic setup, note how battery is slightly different YAML as the card supports multiple batteries:
 
