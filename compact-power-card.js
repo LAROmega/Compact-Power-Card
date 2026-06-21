@@ -336,6 +336,23 @@ class CompactPowerCard extends CompactPowerCardBase {
                         label: "Power Threshold (in watts)",
                         selector: { number: { step: 1, } },
                       },                                                                                                           
+                      pv_entity: {
+                        label: "PV Input Entity",
+                        selector: { entity: {} }
+                      },
+                      pv_unit: {
+                        label: "PV Unit of Measurement",
+                        selector: { 
+                          select: { 
+                            mode: "dropdown",
+                            options: ["W", "kW", "mW"],              
+                          },
+                        },
+                      },
+                      pv_force_hide_when_zero: {
+                        label: "Force Hide PV when zero?",
+                        selector: { boolean: {} }
+                      },
                     },
                   },
                 },
@@ -486,6 +503,7 @@ class CompactPowerCard extends CompactPowerCardBase {
       computeLabel: (schema) => {
         if (schema.name === "help_text") return "Settings Coming Soon";
         if (schema.name === "remove_glow_effects") return "Remove Glow Effects in Dark Mode?";
+        if (schema.name === "force_hide_when_zero") return "Force Hide PV when zero?";
         if (schema.name === "battery") return "Batteries";
         if (schema.id === "grid-entity") return "Grid Power Entity";
         if (schema.id === "power-threshold") return "Power Threshold (in watts)";
@@ -541,6 +559,7 @@ class CompactPowerCard extends CompactPowerCardBase {
     this._hostHeight = null;
     this._externalHeight = null;
     this._deviceLines = [];
+    this._batteryPvLines = [];
     this._deviceLineStates = new Map();
     this._deviceLineFlickerTimer = null;
     this._labelFlickerStates = new Map();
@@ -639,6 +658,27 @@ class CompactPowerCard extends CompactPowerCardBase {
         stroke-opacity: 0.15;
         transition: stroke 0.3s ease, stroke-opacity 0.3s ease;
         vector-effect: non-scaling-stroke;
+      }
+
+      .battery-pv-line {
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-opacity: 0.15;
+        vector-effect: non-scaling-stroke;
+        fill: none;
+        transition: stroke 0.3s ease, stroke-opacity 0.3s ease;
+      }
+
+      .cache-marker {
+        position: absolute;
+        right: 6px;
+        bottom: 4px;
+        color: #00e5ff;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0;
+        pointer-events: none;
+        z-index: 2;
       }
 
       .device-line {
@@ -820,6 +860,34 @@ class CompactPowerCard extends CompactPowerCardBase {
         height: calc(100% - 12px);
         margin: 6px;
       }
+
+      .battery-pv-wrap {
+        position: relative;
+        width: calc(24px * var(--cpc-scale, 1));
+        height: calc(24px * var(--cpc-scale, 1));
+        margin-top: 4px;
+      }
+
+      .battery-pv-circle {
+        position: absolute;
+        inset: 0;
+        background: var(--ha-card-background, var(--card-background-color));
+        border: calc(1.5px * var(--cpc-scale, 1)) solid var(--cpc-pv-icon-stroke, #ff0000);
+        border-radius: 50%;
+        box-sizing: border-box;
+      }
+
+      .battery-pv-panel-icon {
+        --mdc-icon-size: calc(14px * var(--cpc-scale, 1));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+      }
+
 
       .grid-icon-wrap {
         position: relative;
@@ -1176,6 +1244,7 @@ class CompactPowerCard extends CompactPowerCardBase {
   updated(changedProps) {
     if (super.updated) super.updated(changedProps);
     this._adjustLayout();
+    this._renderBatteryPvLines();
     this._renderDeviceLines();
     this._logLayoutSizes();
     const layoutKey = `${this._hostWidth ?? 0}x${this._hostHeight ?? 0}x${this._externalHeight ?? 0}`;
@@ -1185,6 +1254,8 @@ class CompactPowerCard extends CompactPowerCardBase {
     }
     if (this._pendingFlowUpdate && this.shadowRoot) {
       this._pendingFlowUpdate = false;
+      this._updateFlows();
+    } else if (this._batteryPvLines?.length) {
       this._updateFlows();
     }
   }
@@ -1463,6 +1534,38 @@ class CompactPowerCard extends CompactPowerCardBase {
         this.requestUpdate();
       }, delay);
     }
+  }
+
+  _renderBatteryPvLines() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const group = root.getElementById("battery-pv-lines");
+    if (!group) return;
+    for (const name of Object.keys(this._flowAnimations || {})) {
+      if (name.startsWith("battery-pv-")) this._stopFlow(name);
+    }
+    group.innerHTML = "";
+    const lines = Array.isArray(this._batteryPvLines) ? this._batteryPvLines : [];
+    const ns = "http://www.w3.org/2000/svg";
+    lines.forEach((ln, index) => {
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("id", ln.id || `line-battery-pv-${index}`);
+      path.setAttribute("class", "battery-pv-line");
+      path.setAttribute("d", ln.d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", ln.color);
+      path.setAttribute("stroke-width", "2.5");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("vector-effect", "non-scaling-stroke");
+      group.appendChild(path);
+
+      const dot = document.createElementNS(ns, "circle");
+      dot.setAttribute("id", ln.dotId || `dot-battery-pv-${index}`);
+      dot.setAttribute("r", "4");
+      dot.setAttribute("fill", ln.color);
+      dot.setAttribute("opacity", "0");
+      group.appendChild(dot);
+    });
   }
 
   connectedCallback() {
@@ -2502,7 +2605,15 @@ class CompactPowerCard extends CompactPowerCardBase {
       const watts = Number.isFinite(meta?.watts)
         ? meta.watts
         : this._toWatts(value, unit);
-      return { cfg: b, value, unit, watts };
+      const pvEntityRaw = (b?.pv_entity !== undefined) ? b.pv_entity : (b?.solar_entity || null);
+      const pvEntity = pvEntityRaw === "" ? null : pvEntityRaw;
+      const pvUnitOverrideRaw = (b?.pv_unit !== undefined) ? b.pv_unit : (b?.solar_unit || null);
+      const pvUnitOverride = pvUnitOverrideRaw === "" ? null : pvUnitOverrideRaw;
+      const pvUnit = pvUnitOverride || (pvEntity ? (this.hass?.states?.[pvEntity]?.attributes?.unit_of_measurement || "W") : "W");
+      const pvRaw = pvEntity ? this._getNumeric(pvEntity) : null;
+      const pvW = pvEntity ? this._toWatts(pvRaw, pvUnit) : 0;
+      const pvForceHide = Boolean(b?.pv_force_hide_when_zero || b?.solar_force_hide_when_zero);
+      return { cfg: b, value, unit, watts, pvEntity, pvUnitOverride, pvW, pvForceHide };
     });
     const homeMeta = this._getPowerMeta(homeCfg.entity, homeUnit);
 
@@ -2628,12 +2739,16 @@ class CompactPowerCard extends CompactPowerCardBase {
       const baseColor = lineBaseColors[id] || "#7a7a7a";
       this._setLineColor(id, baseColor, false);
     }
+    for (const ln of this._batteryPvLines || []) {
+      if (ln?.id) this._setLineColor(ln.id, ln.color || pvColor, false);
+    }
 
-    // Geometry helpers consistent with render()
+    const hasPv =
+      this._config?.entities &&
+      Object.prototype.hasOwnProperty.call(this._config.entities, "pv");
+
     const layout = this._getLayoutMetrics({
-      hasPv:
-        this._config?.entities &&
-        Object.prototype.hasOwnProperty.call(this._config.entities, "pv"),
+      hasPv,
       hasBattery,
       hasAnyLabels,
     });
@@ -2903,6 +3018,15 @@ class CompactPowerCard extends CompactPowerCardBase {
       };
     }
 
+    for (const ln of this._batteryPvLines || []) {
+      if (!ln?.name || !ln?.id || !ln?.magnitude || ln.magnitude <= threshold) continue;
+      lineIdMap[ln.name] = ln.id;
+      active[ln.name] = {
+        geom: parsePathGeom(ln.id, ln.fallback, false),
+        magnitude: ln.magnitude,
+        color: ln.color || pvColor,
+      };
+    }
 
     let maxFlow = 0;
     for (const f of Object.values(active)) {
@@ -2918,6 +3042,7 @@ class CompactPowerCard extends CompactPowerCardBase {
       "grid-battery",
       "battery-home",
       "battery-grid",
+      ...(this._batteryPvLines || []).map((ln) => ln.name).filter(Boolean),
     ];
 
     for (const name of allNames) {
@@ -2935,6 +3060,7 @@ class CompactPowerCard extends CompactPowerCardBase {
         this._stopFlow(name);
       }
     }
+
   }
 
   _startFlow(name, geom, duration) {
@@ -3331,10 +3457,39 @@ class CompactPowerCard extends CompactPowerCardBase {
         : this._toWatts(inverted, unit);
       const thr = this._toWatts(this._parseThreshold(cfg.threshold), "W", true);
       const effective = useThresholdForCalc ? applyThreshold(rawW, thr) : rawW;
-      return { cfg, raw: rawW, effective, threshold: thr, unit };
+
+      // Direct battery PV inputs
+      const pvEntityRaw = (cfg?.pv_entity !== undefined) ? cfg.pv_entity : (cfg?.solar_entity || null);
+      const pvEntity = pvEntityRaw === "" ? null : pvEntityRaw;
+      const pvUnitOverrideRaw = (cfg?.pv_unit !== undefined) ? cfg.pv_unit : (cfg?.solar_unit || null);
+      const pvUnitOverride = pvUnitOverrideRaw === "" ? null : pvUnitOverrideRaw;
+      const pvRaw = pvEntity ? this._getNumeric(pvEntity) : null;
+      const pvUnit = pvUnitOverride || (pvEntity ? (this.hass?.states?.[pvEntity]?.attributes?.unit_of_measurement || "W") : "W");
+      const pvW = pvEntity ? this._toWatts(pvRaw, pvUnit) : 0;
+      const pvForceHide = Boolean(cfg?.pv_force_hide_when_zero || cfg?.solar_force_hide_when_zero);
+
+      return { cfg, raw: rawW, effective, threshold: thr, unit, pvEntity, pvUnitOverride, pvW, pvForceHide };
     });
     const batteryComputed = batteryItems;
     const battNumericW = batteryItems.reduce((sum, item) => sum + item.effective, 0);
+    const pvBatteries = batteryItems.filter((item) => {
+      if (!item.pvEntity) return false;
+      if (item.pvForceHide && item.pvW <= 0) return false;
+      return true;
+    });
+    const numPvBatteries = pvBatteries.length;
+    const hostWidthVal = this._hostWidth ?? baseWidth;
+    const scale = Math.max(0.8, Math.min(1.0, hostWidthVal / 512));
+
+    const getPvPanelX = (index, total) => {
+      if (total === 1) return 365 * xScale;
+      const start = 310;
+      const end = 420;
+      const step = Math.min(50, (end - start) / (total - 1));
+      const center = (start + end) / 2;
+      const first = center - (total - 1) * step / 2;
+      return (first + index * step) * xScale;
+    };
     const pvThresholdDisplay = this._toWatts(this._parseThreshold(pvCfg.threshold), "W", true);
     const gridThresholdDisplay = this._toWatts(this._parseThreshold(gridCfg.threshold), "W", true);
     const batteryThresholdDisplay = this._toWatts(
@@ -3492,6 +3647,12 @@ class CompactPowerCard extends CompactPowerCardBase {
         this.requestUpdate();
       }, delay);
     }
+
+    const totalBatteryPv = batteryItems.reduce((sum, item) => sum + (item.pvW || 0), 0);
+    const mainBatteryPvUnit = (batteryCfg?.pv_unit !== undefined) ? batteryCfg.pv_unit : (batteryCfg?.solar_unit || null);
+    const formattedTotalBatteryPv = totalBatteryPv > 0
+      ? this._formatPowerWithOverride(totalBatteryPv, pvDecimals, "W", mainBatteryPvUnit)
+      : "";
 
     const battVal = Number.isFinite(battDisplay)
       ? this._formatPowerWithOverride(Math.abs(battDisplay), batteryDecimals, battUnit, batteryUnitOverride ?? null)
@@ -3978,6 +4139,15 @@ class CompactPowerCard extends CompactPowerCardBase {
                       : html`<span class="value-number">${Math.round(soc)}</span><span class="value-unit">%</span>`
                   }`
                 : renderValue(displayVal);
+              const pvEntity = item.pvEntity || null;
+              const pvW = item.pvW || 0;
+              const pvUnitOverride = item.pvUnitOverride || null;
+              let pvValNode = null;
+              if (pvEntity && pvW > 0) {
+                const formattedPv = this._formatPowerWithOverride(pvW, pvDecimals, "W", pvUnitOverride);
+                pvValNode = renderValue(formattedPv);
+              }
+
               const arrow =
                 numericW > 0 ? "mdi:arrow-left" : numericW < 0 ? "mdi:arrow-right" : null;
               return {
@@ -3987,6 +4157,7 @@ class CompactPowerCard extends CompactPowerCardBase {
                 color,
                 val: displayText,
                 valNode: displayValBold,
+                pvValNode,
                 opacity,
                 arrow,
                 hidden,
@@ -4039,6 +4210,22 @@ class CompactPowerCard extends CompactPowerCardBase {
     const gridBatteryPath = curvedLines
       ? `M${gridNode.x} ${gridNode.y} H${humpStartX} Q${humpCtrlInX} ${humpPeakY} ${homeCenterX} ${humpPeakY} Q${humpCtrlOutX} ${humpPeakY} ${humpEndX} ${gridNode.y} H${batteryNode.x}`
       : `M${gridNode.x} ${gridNode.y} H${batteryNode.x}`;
+    this._batteryPvLines = pvBatteries.map((item, index) => {
+      const startX = getPvPanelX(index, numPvBatteries);
+      const startY = sy(24) + 15 * scale;
+      const endX = batteryNode.x - 6 * scale;
+      const endY = pvBatteryEndY;
+      const name = `battery-pv-${index}`;
+      return {
+        id: `line-${name}`,
+        dotId: `dot-${name}`,
+        name,
+        d: makeCornerPath(startX, startY, endX, endY, 0, "V"),
+        fallback: { mode: "line", x1: startX, y1: startY, x2: endX, y2: endY },
+        color: pvColor,
+        magnitude: Math.max(item.pvW || 0, 0),
+      };
+    });
 
     const layoutReady = this._layoutReady;
     const hideCardBackground = this._coerceBoolean(this._config?.hide_card_background, false);
@@ -4069,6 +4256,7 @@ class CompactPowerCard extends CompactPowerCardBase {
           <path id="line-home-battery" class="flow-line" fill="none" d="${batteryHomePath}" />
           <circle id="dot-pv-home"      r="4" fill="${pvColor}" opacity="0" />
           <path id="arc-grid-battery" class="flow-line" fill="none" d="${gridBatteryPath}" />
+          <g id="battery-pv-lines"></g>
           <g id="device-lines"></g>
 
           <!-- Remaining flow dots -->
@@ -4081,6 +4269,27 @@ class CompactPowerCard extends CompactPowerCardBase {
 
           </svg>
           <div class="overlay">
+            <div class="cache-marker">CPC mango 8138</div>
+            <!-- Battery PV panels -->
+            ${pvBatteries.map((item, index) => {
+              const x = getPvPanelX(index, numPvBatteries);
+              const leftPct = (x / baseWidth) * 100;
+              const formattedPv = this._formatPowerWithOverride(item.pvW, pvDecimals, "W", item.pvUnitOverride);
+              return html`
+                <div class="overlay-item" style="left: ${leftPct}%; top: ${pctBaseY(24)}%; transform: translate(-50%, -50%);">
+                  <div class="node-marker pv-marker clickable" @click=${() => this._openMoreInfo(item.pvEntity)}>
+                    <div class="node-label" style="color: ${pvColor};">
+                      <span>${renderValue(formattedPv)}</span>
+                    </div>
+                    <div class="battery-pv-wrap" style="filter: ${allowGlow && item.pvW > 0 ? `drop-shadow(0 0 6px ${pvColor})` : "none"};">
+                      <div class="battery-pv-circle" style="border-color: ${pvColor};"></div>
+                      <ha-icon class="battery-pv-panel-icon" icon="mdi:solar-panel" style="color: ${pvColor};"></ha-icon>
+                    </div>
+                  </div>
+                </div>
+              `;
+            })}
+
             <!-- grid voltage label removed -->
             ${pvLabelItems.map(
               (lbl) => html`<div class="overlay-item" style="left:${lbl.leftPct}%; top:${lbl.topPct}%;">
@@ -4241,6 +4450,7 @@ class CompactPowerCard extends CompactPowerCardBase {
                         : ""}
                       <span style="opacity:1;">${battValNode}</span>
                     </div>
+
                   </div>
                 </div>`
               : ""}
@@ -4254,6 +4464,7 @@ class CompactPowerCard extends CompactPowerCardBase {
                         style="margin-top: -6px; color:${b.color};"
                         @click=${() => this._handleTapAction(b.cfg, b.entity)}
                       >
+
                         <div class="aux-label" style="padding-top: 0px; padding-bottom: 0px; margin-top: 4px; padding-left: 1px; padding-right: 1px; opacity:${b.hidden ? 0.35 : b.opacity};">
                           ${b.arrow && !b.hidden
                             ? html`<ha-icon class="inline-icon" icon="${b.arrow}" style="color:${b.color}; opacity:1; --mdc-icon-size: calc(12px * var(--cpc-scale, 1));"></ha-icon>`
