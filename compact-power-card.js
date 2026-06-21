@@ -2605,14 +2605,14 @@ class CompactPowerCard extends CompactPowerCardBase {
       const watts = Number.isFinite(meta?.watts)
         ? meta.watts
         : this._toWatts(value, unit);
-      const pvEntityRaw = (b?.pv_entity !== undefined) ? b.pv_entity : (b?.solar_entity || null);
+      const pvEntityRaw = b?.pv_entity ?? null;
       const pvEntity = pvEntityRaw === "" ? null : pvEntityRaw;
-      const pvUnitOverrideRaw = (b?.pv_unit !== undefined) ? b.pv_unit : (b?.solar_unit || null);
+      const pvUnitOverrideRaw = b?.pv_unit ?? null;
       const pvUnitOverride = pvUnitOverrideRaw === "" ? null : pvUnitOverrideRaw;
       const pvUnit = pvUnitOverride || (pvEntity ? (this.hass?.states?.[pvEntity]?.attributes?.unit_of_measurement || "W") : "W");
       const pvRaw = pvEntity ? this._getNumeric(pvEntity) : null;
       const pvW = pvEntity ? this._toWatts(pvRaw, pvUnit) : 0;
-      const pvForceHide = Boolean(b?.pv_force_hide_when_zero || b?.solar_force_hide_when_zero);
+      const pvForceHide = Boolean(b?.pv_force_hide_when_zero);
       return { cfg: b, value, unit, watts, pvEntity, pvUnitOverride, pvW, pvForceHide };
     });
     const homeMeta = this._getPowerMeta(homeCfg.entity, homeUnit);
@@ -3459,14 +3459,14 @@ class CompactPowerCard extends CompactPowerCardBase {
       const effective = useThresholdForCalc ? applyThreshold(rawW, thr) : rawW;
 
       // Direct battery PV inputs
-      const pvEntityRaw = (cfg?.pv_entity !== undefined) ? cfg.pv_entity : (cfg?.solar_entity || null);
+      const pvEntityRaw = cfg?.pv_entity ?? null;
       const pvEntity = pvEntityRaw === "" ? null : pvEntityRaw;
-      const pvUnitOverrideRaw = (cfg?.pv_unit !== undefined) ? cfg.pv_unit : (cfg?.solar_unit || null);
+      const pvUnitOverrideRaw = cfg?.pv_unit ?? null;
       const pvUnitOverride = pvUnitOverrideRaw === "" ? null : pvUnitOverrideRaw;
       const pvRaw = pvEntity ? this._getNumeric(pvEntity) : null;
       const pvUnit = pvUnitOverride || (pvEntity ? (this.hass?.states?.[pvEntity]?.attributes?.unit_of_measurement || "W") : "W");
       const pvW = pvEntity ? this._toWatts(pvRaw, pvUnit) : 0;
-      const pvForceHide = Boolean(cfg?.pv_force_hide_when_zero || cfg?.solar_force_hide_when_zero);
+      const pvForceHide = Boolean(cfg?.pv_force_hide_when_zero);
 
       return { cfg, raw: rawW, effective, threshold: thr, unit, pvEntity, pvUnitOverride, pvW, pvForceHide };
     });
@@ -3647,12 +3647,6 @@ class CompactPowerCard extends CompactPowerCardBase {
         this.requestUpdate();
       }, delay);
     }
-
-    const totalBatteryPv = batteryItems.reduce((sum, item) => sum + (item.pvW || 0), 0);
-    const mainBatteryPvUnit = (batteryCfg?.pv_unit !== undefined) ? batteryCfg.pv_unit : (batteryCfg?.solar_unit || null);
-    const formattedTotalBatteryPv = totalBatteryPv > 0
-      ? this._formatPowerWithOverride(totalBatteryPv, pvDecimals, "W", mainBatteryPvUnit)
-      : "";
 
     const battVal = Number.isFinite(battDisplay)
       ? this._formatPowerWithOverride(Math.abs(battDisplay), batteryDecimals, battUnit, batteryUnitOverride ?? null)

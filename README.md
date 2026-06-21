@@ -187,6 +187,9 @@ The UI will calculate your % of battery available across multiple batteries. If 
 entities:
   battery:
     - entity: sensor.battery_power_1
+      pv_entity: sensor.battery_1_pv_power
+      pv_unit: kW
+      pv_force_hide_when_zero: true
     - entity: sensor.battery_power_2
       battery_soc: sensor.battery_soc2
       battery_capacity: 9.5    
@@ -346,6 +349,9 @@ entities:
     - entity: sensor.battery_power
       invert_state_values: false
       threshold: 25
+      pv_entity: sensor.battery_pv_power
+      pv_unit: W
+      pv_force_hide_when_zero: true
   battery_labels:
     - entity: sensor.battery_soc
       unit: "%"
