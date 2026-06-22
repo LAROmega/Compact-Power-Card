@@ -2901,9 +2901,11 @@ class CompactPowerCard extends CompactPowerCardBase {
     const active = {};
 
     // Flow priorities (see Power Flow Rules):
-    // PV: home → battery (charge) → export
-    // Battery (discharge): home → export
-    // Grid (import): home → battery (charge), only after PV/battery
+    // Measured export is reserved before home attribution so exported power is
+    // shown leaving the card instead of being counted as home supply.
+    // PV: battery charge when forced → export → home → battery charge
+    // Battery (discharge): home → export, unless home_load_only is set
+    // Grid (import): home → battery charge, only after PV/battery
     const gridImport = gridFlow < 0 ? -gridFlow : 0;
     const gridExport = gridFlow > 0 ? gridFlow : 0;
     const battDischarge = batteryFlow > 0 ? batteryFlow : 0;
@@ -2911,6 +2913,7 @@ class CompactPowerCard extends CompactPowerCardBase {
 
     let homeNeed = Math.max(homeEffectiveFlow, 0);
     let chargeNeed = battCharge;
+    let exportNeed = gridExport;
 
     const forceCharge = battCharge > 0 && gridImport > 0;
 
@@ -2923,19 +2926,23 @@ class CompactPowerCard extends CompactPowerCardBase {
       pvToBattery = Math.min(pvFlow, chargeNeed);
       chargeNeed -= pvToBattery;
       let pvRemaining = pvFlow - pvToBattery;
+      pvToGrid = Math.min(pvRemaining, exportNeed);
+      exportNeed -= pvToGrid;
+      pvRemaining -= pvToGrid;
+      pvToHome = Math.min(pvRemaining, homeNeed);
+      homeNeed -= pvToHome;
+    } else {
+      // PV → export first, then home, then battery charge.
+      let pvRemaining = pvFlow;
+      pvToGrid = Math.min(pvRemaining, exportNeed);
+      exportNeed -= pvToGrid;
+      pvRemaining -= pvToGrid;
       pvToHome = Math.min(pvRemaining, homeNeed);
       homeNeed -= pvToHome;
       pvRemaining -= pvToHome;
-      pvToGrid = Math.min(pvRemaining, gridExport);
-    } else {
-      // PV → home, then battery charge, then export
-      pvToHome = Math.min(pvFlow, homeNeed);
-      homeNeed -= pvToHome;
-      let pvRemaining = pvFlow - pvToHome;
       pvToBattery = Math.min(pvRemaining, chargeNeed);
       pvRemaining -= pvToBattery;
       chargeNeed -= pvToBattery;
-      pvToGrid = Math.min(pvRemaining, gridExport);
     }
 
     // Battery discharge → remaining home, then export (only what PV export didn't cover)
@@ -2947,7 +2954,8 @@ class CompactPowerCard extends CompactPowerCardBase {
       homeNeed -= batteryToHome;
     }
     const battDischargeAfterHome = homeLoadOnly ? 0 : Math.max(battDischarge - batteryToHome, 0);
-    const batteryToGrid = homeLoadOnly ? 0 : Math.min(battDischargeAfterHome, Math.max(gridExport - pvToGrid, 0));
+    const batteryToGrid = homeLoadOnly ? 0 : Math.min(battDischargeAfterHome, exportNeed);
+    exportNeed -= batteryToGrid;
 
     // Grid import → remaining home, then remaining battery charge
     const gridToHome = Math.min(gridImport, homeNeed);
